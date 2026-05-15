@@ -1,23 +1,21 @@
-#!/usr/bin/env python3
-"""
-Парсер Google Calendar API - Этап 1: Подключение и базовые утилиты
-"""
-
 import datetime
 import os.path
 import pickle
-from typing import List, Dict, Any, Tuple, Optional
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
-# Конфигурация
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 WORK_START_HOUR, WORK_END_HOUR = 10, 22
 MIN_FREE_INTERVAL = 60  # минут
+SHOW_DATES = False
 
-# ============ АУТЕНТИФИКАЦИЯ ============
+# Режим отображения расписания:
+# 'next' - только следующая неделя
+# 'two_weeks' - общие окна на двух неделях (текущая и следующая)
+SCHEDULE_MODE = 'two_weeks'  
+
+
 def get_credentials():
     creds = None
     if os.path.exists('token.pickle'):
@@ -38,129 +36,36 @@ def get_credentials():
             pickle.dump(creds, token)
     return creds
 
-# ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 def parse_time(dt_str: str, tz_info) -> datetime.datetime:
-    """Парсит время из строки Google Calendar"""
+    "Парсит время из строки Google Calendar"
     if dt_str.endswith('Z'):
         dt_str = dt_str[:-1] + '+00:00'
     dt = datetime.datetime.fromisoformat(dt_str)
     return dt.astimezone(tz_info) if dt.tzinfo else dt.replace(tzinfo=datetime.timezone.utc).astimezone(tz_info)
 
-def get_week_range(week_offset: int = 0) -> Tuple[datetime.datetime, datetime.datetime]:
-    """Возвращает начало и конец недели со смещением"""
+def get_week_range(week_offset: int = 0) -> tuple[datetime.datetime, datetime.datetime]:
+    "Возвращает начало и конец недели со смещением"
     now = datetime.datetime.now().astimezone()
     start = now - datetime.timedelta(days=now.weekday())
     start = start.replace(hour=0, minute=0, second=0, microsecond=0)
     start += datetime.timedelta(weeks=week_offset)
     return start, start + datetime.timedelta(days=7)
 
-def get_events(service, calendar_id: str, start: datetime.datetime, end: datetime.datetime) -> List[Dict]:
-    """Получает события за период"""
-    try:
-        result = service.events().list(
-            calendarId=calendar_id,
-            timeMin=start.astimezone(datetime.timezone.utc).isoformat(),
-            timeMax=end.astimezone(datetime.timezone.utc).isoformat(),
-            singleEvents=True, orderBy='startTime'
-        ).execute()
-        
-        return result.get('items', [])
-    except HttpError as e:
-        print(f'Ошибка API: {e}')
-        return []
-
-# ============ MAIN ============
-def main():
-    print("Запуск парсера (Этап 1: Проверка подключения)")
+def get_events(service, calendar_id: str, start: datetime.datetime, end: datetime.datetime) -> list[dict]:
+    "Получает события за период"
+    result = service.events().list(
+        calendarId=calendar_id,
+        timeMin=start.astimezone(datetime.timezone.utc).isoformat(),
+        timeMax=end.astimezone(datetime.timezone.utc).isoformat(),
+        singleEvents=True, orderBy='startTime'
+    ).execute()
     
-    try:
-        creds = get_credentials()
-        service = build('calendar', 'v3', credentials=creds)
-        print(" Успешное подключение к Google Calendar API")
-        
-        # Тестовый запрос событий на текущую неделю
-        week_start, week_end = get_week_range(0)
-        events = get_events(service, 'primary', week_start, week_end)
-        print(f" Получено событий за текущую неделю: {len(events)}")
-        
-    except FileNotFoundError as e:
-        print(f"\n {e}")
-    except Exception as e:
-        print(f"\n Ошибка: {e}")
-        raise
+    return result.get('items', [])
 
-if __name__ == '__main__':
-    main()
-    #!/usr/bin/env python3
-"""
-Парсер Google Calendar API - Этап 2: Логика анализа свободного времени
-"""
 
-import datetime
-import os.path
-import pickle
-from typing import List, Dict, Any, Tuple, Optional
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-
-# Конфигурация
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-WORK_START_HOUR, WORK_END_HOUR = 10, 22
-MIN_FREE_INTERVAL = 60  # минут
-
-# ============ АУТЕНТИФИКАЦИЯ ============
-def get_credentials():
-    creds = None
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
-
-    path = 'client_secret_1044780173531-9n79dtbhfs2tthk6b555mtgt3gua92gf.apps.googleusercontent.com.json'
-    
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(path):
-                raise FileNotFoundError("Файл credentials.json не найден")
-            flow = InstalledAppFlow.from_client_secrets_file(path, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
-    return creds
-
-# ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
-def parse_time(dt_str: str, tz_info) -> datetime.datetime:
-    if dt_str.endswith('Z'):
-        dt_str = dt_str[:-1] + '+00:00'
-    dt = datetime.datetime.fromisoformat(dt_str)
-    return dt.astimezone(tz_info) if dt.tzinfo else dt.replace(tzinfo=datetime.timezone.utc).astimezone(tz_info)
-
-def get_week_range(week_offset: int = 0) -> Tuple[datetime.datetime, datetime.datetime]:
-    now = datetime.datetime.now().astimezone()
-    start = now - datetime.timedelta(days=now.weekday())
-    start = start.replace(hour=0, minute=0, second=0, microsecond=0)
-    start += datetime.timedelta(weeks=week_offset)
-    return start, start + datetime.timedelta(days=7)
-
-def get_events(service, calendar_id: str, start: datetime.datetime, end: datetime.datetime) -> List[Dict]:
-    try:
-        result = service.events().list(
-            calendarId=calendar_id,
-            timeMin=start.astimezone(datetime.timezone.utc).isoformat(),
-            timeMax=end.astimezone(datetime.timezone.utc).isoformat(),
-            singleEvents=True, orderBy='startTime'
-        ).execute()
-        return result.get('items', [])
-    except HttpError as e:
-        print(f'Ошибка API: {e}')
-        return []
-
-# ============ ОБРАБОТКА ИНТЕРВАЛОВ (НОВОЕ) ============
-def get_busy_intervals(events: List[Dict], tz_info) -> List[Tuple[datetime.datetime, datetime.datetime]]:
-    """Извлекает занятые интервалы, обрезая их по рабочему дню"""
+#  ОБРАБОТКА ИНТЕРВАЛОВ 
+def get_busy_intervals(events: list[dict], tz_info) -> list[tuple[datetime.datetime, datetime.datetime]]:
+    "Извлекает занятые интервалы из событий"
     intervals = []
     for event in events:
         start, end = event.get('start', {}), event.get('end', {})
@@ -170,17 +75,16 @@ def get_busy_intervals(events: List[Dict], tz_info) -> List[Tuple[datetime.datet
         dt_start = parse_time(start['dateTime'], tz_info)
         dt_end = parse_time(end['dateTime'], tz_info)
         
-        # Границы текущего дня события
-        day_start_limit = dt_start.replace(hour=WORK_START_HOUR, minute=0)
-        day_end_limit = dt_start.replace(hour=WORK_END_HOUR, minute=0)
+        # Обрезаем по рабочему дню
+        day_start = dt_start.replace(hour=WORK_START_HOUR, minute=0)
+        day_end = dt_start.replace(hour=WORK_END_HOUR, minute=0)
         
-        # Если событие пересекается с рабочим временем
-        if dt_end > day_start_limit and dt_start < day_end_limit:
-            intervals.append((max(dt_start, day_start_limit), min(dt_end, day_end_limit)))
+        if dt_end > day_start and dt_start < day_end:
+            intervals.append((max(dt_start, day_start), min(dt_end, day_end)))
     return intervals
 
-def merge_intervals(intervals: List[Tuple]) -> List[List]:
-    """Объединяет пересекающиеся интервалы"""
+def merge_intervals(intervals: list[tuple]) -> list[list]:
+    "Объединяет пересекающиеся интервалы"
     if not intervals:
         return []
     intervals.sort()
@@ -193,47 +97,66 @@ def merge_intervals(intervals: List[Tuple]) -> List[List]:
     return merged
 
 def get_free_intervals(day_start: datetime.datetime, day_end: datetime.datetime, 
-                       busy: List[List], min_minutes: int) -> List[Tuple]:
-    """Вычисляет свободные интервалы между занятыми"""
+                       busy: list[list], min_minutes: int) -> list[tuple]:
+    "Вычисляет свободные интервалы"
     free = []
     if not busy:
         free = [(day_start, day_end)]
     else:
-        # Свободное время до первого события
         if day_start < busy[0][0]:
             free.append((day_start, busy[0][0]))
-        # Свободное время между событиями
         for i in range(len(busy)-1):
             if busy[i][1] < busy[i+1][0]:
                 free.append((busy[i][1], busy[i+1][0]))
-        # Свободное время после последнего события
         if busy[-1][1] < day_end:
             free.append((busy[-1][1], day_end))
     
-    # Фильтр по минимальной длительности
+    # Фильтруем по длительности
     return [(s, e) for s, e in free if (e - s).total_seconds() / 60 >= min_minutes]
 
-def get_week_schedule(service, calendar_id: str, week_offset: int = 0) -> Dict[int, List]:
-    """Основная функция анализа недели"""
+#  ВЫВОД 
+def format_interval(start: datetime.datetime, end: datetime.datetime) -> str:
+    "Форматирует интервал без указания длительности"
+    if start.strftime('%H:%M') == f"{WORK_START_HOUR:02d}:00" and end.strftime('%H:%M') == f"{WORK_END_HOUR:02d}:00":
+        return "Весь день"
+    return f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+
+def print_weekly_schedule(free_by_day: dict[int, list], week_start: datetime.datetime, title: str):
+    "Выводит расписание на неделю"
+    day_names = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+    print(f"\n{title}")
+    print("=" * 70)
+    
+    has_free = False
+    for i, name in enumerate(day_names):
+        if i in free_by_day and free_by_day[i]:
+            has_free = True
+            day_date = week_start + datetime.timedelta(days=i)
+            if SHOW_DATES:
+                print(f"{name} ({day_date.strftime('%d.%m')})")
+            else:
+                print(f"{name}")
+            for start, end in free_by_day[i]:
+                print(format_interval(start, end))
+
+    if not has_free:
+        print("Нет свободных интервалов")
+    print("=" * 70)
+
+#  ОСНОВНЫЕ ФУНКЦИИ 
+def get_week_schedule(service, calendar_id: str, week_offset: int = 0) -> dict[int, list]:
+    "Возвращает расписание на указанную неделю"
     week_start, week_end = get_week_range(week_offset)
     events = get_events(service, calendar_id, week_start, week_end)
     tz_info = datetime.datetime.now().astimezone().tzinfo
     
-    # Группируем занятые интервалы по дням недели (0-6)
     busy_by_day = {i: [] for i in range(7)}
     for event in events:
-        # get_busy_intervals возвращает список кортежей, но здесь мы передаем одно событие
-        # Для корректной работы нужно передавать список, но в цикле мы обрабатываем по одному
-        # Или можно собрать все события и передать разом. Оптимизируем:
-        pass 
-
-    # Более эффективный подход: обработать все события сразу
-    all_busy = get_busy_intervals(events, tz_info)
-    for start, end in all_busy:
-        day = start.weekday()
-        busy_by_day[day].append((start, end))
+        for start, end in get_busy_intervals([event], tz_info):
+            day = start.weekday()
+            busy_by_day[day].append((start, end))
     
-    # Вычисляем свободные окна для каждого дня
+    # Объединяем интервалы и ищем свободные
     free_by_day = {}
     for day in range(7):
         day_date = week_start + datetime.timedelta(days=day)
@@ -247,28 +170,118 @@ def get_week_schedule(service, calendar_id: str, week_offset: int = 0) -> Dict[i
     
     return free_by_day
 
-# ============ MAIN ============
+def find_common_windows_next_and_two_ahead(service, calendar_id: str) -> dict[int, list]:
+    "Находит общие свободные окна на следующей неделе и через одну."
+    week_next = get_week_schedule(service, calendar_id, 1)   # Следующая неделя
+    week_two = get_week_schedule(service, calendar_id, 2)    # Через одну неделю
+    
+    common = {}
+    for day in range(7):
+        if day in week_next and day in week_two:
+            intersections = []
+            for s1, e1 in week_next[day]:
+                for s2, e2 in week_two[day]:
+                    start1, end1 = s1.time(), e1.time()
+                    start2, end2 = s2.time(), e2.time()
+                    
+                    intersect_start = max(start1, start2)
+                    intersect_end = min(end1, end2)
+                    
+                    if intersect_start < intersect_end:
+                        duration = (datetime.datetime.combine(datetime.date.today(), intersect_end) - 
+                                  datetime.datetime.combine(datetime.date.today(), intersect_start)).total_seconds() / 60
+                        if duration >= MIN_FREE_INTERVAL:
+                            # Создаем интервал из первой недели
+                            common_start = s1.replace(hour=intersect_start.hour, minute=intersect_start.minute)
+                            common_end = s1.replace(hour=intersect_end.hour, minute=intersect_end.minute)
+                            intersections.append((common_start, common_end))
+            
+            if intersections:
+                common[day] = merge_intervals(intersections)
+    
+    return common
+
+def display_events(events: list[dict], calendar_name: str):
+    "Отображает события"
+    if not events:
+        print(f"\nВ календаре '{calendar_name}' нет событий")
+        return
+    
+    print(f"\n{'='*70}\n {calendar_name} | {len(events)} событий\n{'='*70}")
+    for i, e in enumerate(events, 1):
+        start = e.get('start', {})
+        time_str = parse_time(start['dateTime'], datetime.timezone.utc).strftime('%d.%m.%Y %H:%M') if 'dateTime' in start else start.get('date', 'Дата не указана')
+        print(f"{i}. {e.get('summary', 'Без названия')}")
+        print(f"Начало: {time_str}")
+        if e.get('description'):
+            print(f"Описание: {e.get('description')[:100]}")
+        print(f"{'─'*50}")
+
+def get_all_calendars(service) -> list[dict]:
+    "Получает все календари"
+    return service.calendarList().list().execute().get('items', [])
+
 def main():
-    print("Запуск парсера (Этап 2: Анализ расписания)")
+    print(f"Запуск парсера | Мин. интервал: {MIN_FREE_INTERVAL} мин")
+    print(f"Режим: {'Общие окна на двух неделях' if SCHEDULE_MODE == 'two_weeks' else 'Только следующая неделя'}")
     
     try:
         creds = get_credentials()
         service = build('calendar', 'v3', credentials=creds)
-        print(" Подключено к API")
+        print("Подключено")
         
-        # Анализ следующей недели
-        schedule = get_week_schedule(service, 'primary', 1)
+        calendars = get_all_calendars(service)
+        if not calendars:
+            print("Календари не найдены")
+            return
         
-        print("\n Свободные окна на следующую неделю:")
-        day_names = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-        for day_idx, intervals in schedule.items():
-            print(f"{day_names[day_idx]}: {len(intervals)} окон")
-            for s, e in intervals:
-                print(f"   {s.strftime('%H:%M')} - {e.strftime('%H:%M')}")
-                
+        print(f" Найдено календарей: {len(calendars)}")
+
+        
+        # Выбираем календарь
+        selected = None
+        for i in calendars:
+            if i['summary'] == 'Домашний':
+                selected = i
+                break
+        
+        if not selected:
+             # Фолбэк, если календарь 'Домашний' не найден
+            selected = calendars[0] if calendars else None
+
+
+        cal_name = selected.get('summary', 'Календарь')
+        cal_id = selected.get('id')
+        
+        # Показываем события
+        week_start, _ = get_week_range(0)
+        events = get_events(service, cal_id, week_start, week_start + datetime.timedelta(days=30))
+        display_events(events[:15], cal_name)
+        
+        # Выводим расписание
+        if SCHEDULE_MODE == 'next':
+            # Только следующая неделя
+            week_start_next, _ = get_week_range(1)
+            schedule = get_week_schedule(service, cal_id, 1)
+            print_weekly_schedule(
+                schedule,
+                week_start_next,
+                f" Свободное время в '{cal_name}' на следующей неделе"
+            )
+        elif SCHEDULE_MODE == 'two_weeks':
+            # Общие окна на следующей неделе и через одну
+            common_windows = find_common_windows_next_and_two_ahead(service, cal_id)
+            if common_windows:
+                week_start_next, _ = get_week_range(1)
+                print_weekly_schedule(
+                    common_windows,
+                    week_start_next,
+                    f" ОБЩИЕ ОКНА на следующей неделе и через одну (мин. {MIN_FREE_INTERVAL} мин)"
+                )
+            else:
+                print(f"\n Нет общих окон длительностью {MIN_FREE_INTERVAL}+ минут на двух неделях")
     except Exception as e:
         print(f"\n Ошибка: {e}")
-        raise
 
 if __name__ == '__main__':
     main()
